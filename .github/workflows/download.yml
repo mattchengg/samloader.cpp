@@ -1,0 +1,98 @@
+name: samloader build & test
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Device model (e.g. SM-A546B)'
+        required: true
+        default: 'SM-A546B'
+      csc:
+        description: 'CSC code (e.g. OXM, TPA, CHT)'
+        required: true
+        default: 'OXM'
+
+jobs:
+  linux:
+    name: Build & Test for Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install cmake clang libcurl4-openssl-dev libssl-dev xz-utils
+
+      - name: Build samloader
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j
+
+      - name: Verify binary exists
+        run: |
+          BIN=$(find build -maxdepth 2 -type f -name 'samloader' | head -1)
+          if [ -z "$BIN" ]; then
+            echo "samloader binary not found after build"
+            exit 1
+          fi
+          echo "Binary found at: $BIN"
+          chmod +x "$BIN"
+          echo "SAMLOADER=$BIN" >> $GITHUB_ENV
+
+      - name: Check latest firmware version
+        id: check_version
+        run: |
+          MODEL="${{ github.event.inputs.model }}"
+          CSC="${{ github.event.inputs.csc }}"
+
+          echo "Checking latest firmware for model=$MODEL csc=$CSC"
+
+          FW_VERSION=$("$SAMLOADER" check -m "$MODEL" -r "$CSC" 2>&1 | tr -d '[:space:]')
+
+          if [ -z "$FW_VERSION" ]; then
+            echo "Could not get firmware version"
+            exit 1
+          fi
+
+          echo "fw_version=$FW_VERSION" >> $GITHUB_OUTPUT
+          echo "Latest firmware: $FW_VERSION"
+
+      - name: Download firmware
+        run: |
+          MODEL="${{ github.event.inputs.model }}"
+          CSC="${{ github.event.inputs.csc }}"
+          FW="${{ steps.check_version.outputs.fw_version }}"
+
+          mkdir -p fw_output fw_extracted
+
+          echo "Downloading firmware $FW for $MODEL / $CSC"
+          "$SAMLOADER" download \
+            -m "$MODEL" \
+            -r "$CSC" \
+            -O fw_output/
+
+      - name: Decompress firmware
+        run: |
+          for f in fw_output/*.zip; do
+            echo "Extracting: $f"
+            unzip -o "$f" -d fw_extracted/
+          done
+
+      - name: Verify download
+        run: |
+          echo "=== fw_output ==="
+          ls -lh fw_output/
+          echo "=== fw_extracted ==="
+          ls -lh fw_extracted/
+
+          FILE_COUNT=$(find fw_output fw_extracted -type f | wc -l)
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "No files found"
+            exit 1
+          fi
+          echo "Verified: $FILE_COUNT file(s) total"
