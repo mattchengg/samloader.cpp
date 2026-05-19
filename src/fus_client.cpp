@@ -170,7 +170,7 @@ size_t capture_headers(char* buffer, size_t size, size_t nitems, void* userdata)
     return bytes;
 }
 
-std::optional<std::string> extract_jsessionid(const std::string& set_cookie_header) {
+std::optional<std::string> extract_session_cookie(const std::string& set_cookie_header) {
     const auto cookie_end = set_cookie_header.find(';');
     const std::string cookie_pair = trim_copy(set_cookie_header.substr(0, cookie_end));
     const auto separator_pos = cookie_pair.find('=');
@@ -179,11 +179,18 @@ std::optional<std::string> extract_jsessionid(const std::string& set_cookie_head
     }
 
     const std::string name = trim_copy(cookie_pair.substr(0, separator_pos));
-    if (!name.starts_with("JSESSIONID")) {
+    const std::string value = trim_copy(cookie_pair.substr(separator_pos + 1));
+    if (value.empty()) {
         return std::nullopt;
     }
 
-    return trim_copy(cookie_pair.substr(separator_pos + 1));
+    if (name == "SESSION") {
+        return "SESSION=" + value;
+    }
+    if (name == "JSESSIONID" || name == "JSESSIONID_SVR") {
+        return "JSESSIONID=" + value;
+    }
+    return std::nullopt;
 }
 
 std::string truncate_for_error(std::string text) {
@@ -374,7 +381,7 @@ std::vector<std::string> FusClient::make_headers(const bool include_cookie) cons
     headers.push_back(authorization);
     headers.emplace_back(std::string("User-Agent: ") + kUserAgent);
     if (include_cookie && !sessid_.empty()) {
-        headers.push_back("Cookie: JSESSIONID=" + sessid_);
+        headers.push_back("Cookie: " + sessid_);
     }
     return headers;
 }
@@ -387,9 +394,9 @@ void FusClient::apply_response_state(const HttpResponse& response) {
     }
 
     for (const auto& cookie_header : response.set_cookie_headers) {
-        const auto session_id = extract_jsessionid(cookie_header);
-        if (session_id.has_value()) {
-            sessid_ = *session_id;
+        const auto session_cookie = extract_session_cookie(cookie_header);
+        if (session_cookie.has_value()) {
+            sessid_ = *session_cookie;
             break;
         }
     }

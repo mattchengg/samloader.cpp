@@ -16,8 +16,8 @@ namespace samloader::auth {
 
 namespace {
 
-constexpr std::string_view KEY_1 = "vicopx7dqu06emacgpnpy8j8zwhduwlh";
-constexpr std::string_view KEY_2 = "9u7qab84rpc16gvk";
+constexpr std::string_view KEY_1 = "jqw2zntssasudk3zuwwx4tnqz5h3b6i4";
+constexpr std::string_view KEY_2 = "ifzg4ovyl3cyl3a5";
 
 std::runtime_error openssl_error(const std::string& action) {
     std::array<char, 256> buffer{};
